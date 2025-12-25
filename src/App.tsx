@@ -23,8 +23,7 @@ import {
   Float,
   Stars,
   Sparkles,
-  useTexture,
-  Text
+  useTexture
 } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -87,6 +86,30 @@ const FoliageMaterial = shaderMaterial(
 );
 extend({ FoliageMaterial });
 
+// --- Shader Material (Text Particles) ---
+const TextParticleMaterial = shaderMaterial(
+  { uTime: 0, uProgress: 0 },
+  `uniform float uTime; uniform float uProgress; attribute vec3 aTargetPos; attribute float aRandom; attribute vec3 aColor;
+  varying vec3 vColor; varying float vAlpha;
+  void main() {
+    vec3 noise = vec3(sin(uTime * 2.0 + position.x * 10.0), cos(uTime * 1.5 + position.y * 10.0), sin(uTime * 2.5 + position.z * 10.0)) * 0.3;
+    vec3 finalPos = mix(position + noise, aTargetPos, uProgress);
+    vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
+    gl_PointSize = (80.0 * (0.8 + aRandom * 0.4)) / -mvPosition.z;
+    gl_Position = projectionMatrix * mvPosition;
+    vColor = aColor;
+    vAlpha = uProgress;
+  }`,
+  `varying vec3 vColor; varying float vAlpha;
+  void main() {
+    float r = distance(gl_PointCoord, vec2(0.5));
+    if (r > 0.5) discard;
+    float alpha = (1.0 - r * 2.0) * vAlpha;
+    gl_FragColor = vec4(vColor * 2.0, alpha);
+  }`
+);
+extend({ TextParticleMaterial });
+
 // --- Helper: Tree Shape ---
 const getTreePosition = () => {
   const h = CONFIG.tree.height; const rBase = CONFIG.tree.radius;
@@ -94,6 +117,59 @@ const getTreePosition = () => {
   const currentRadius = rBase * (1 - normalizedY); const theta = Math.random() * Math.PI * 2;
   const r = Math.random() * currentRadius;
   return [r * Math.cos(theta), y, r * Math.sin(theta)];
+};
+
+// --- Helper: Generate Text Particle Positions ---
+const generateTextParticles = (count: number) => {
+  // 为"圣诞节快乐"生成粒子位置（简化版：使用网格采样）
+  const positions: number[] = [];
+  const targetPositions: number[] = [];
+  const randoms: number[] = [];
+  const colors: number[] = [];
+
+  // 彩虹渐变色
+  const rainbowColors = [
+    [1.0, 0.0, 0.0], // 红
+    [1.0, 0.5, 0.0], // 橙
+    [1.0, 1.0, 0.0], // 黄
+    [0.0, 1.0, 0.0], // 绿
+    [0.0, 0.5, 1.0], // 蓝
+    [0.5, 0.0, 1.0], // 紫
+  ];
+
+  // 文字区域：宽20，高6
+  const textWidth = 20;
+  const textHeight = 6;
+
+  for (let i = 0; i < count; i++) {
+    // 初始位置：随机散布在远处
+    const theta = Math.random() * Math.PI * 2;
+    const radius = 30 + Math.random() * 20;
+    positions.push(
+      Math.cos(theta) * radius,
+      (Math.random() - 0.5) * 40,
+      Math.sin(theta) * radius
+    );
+
+    // 目标位置：文字形状（简化为矩形区域）
+    const x = (Math.random() - 0.5) * textWidth;
+    const y = (Math.random() - 0.5) * textHeight;
+    targetPositions.push(x, y, 0);
+
+    randoms.push(Math.random());
+
+    // 根据 x 位置分配彩虹色
+    const colorIndex = Math.floor(((x + textWidth / 2) / textWidth) * rainbowColors.length) % rainbowColors.length;
+    const color = rainbowColors[colorIndex];
+    colors.push(color[0], color[1], color[2]);
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    targetPositions: new Float32Array(targetPositions),
+    randoms: new Float32Array(randoms),
+    colors: new Float32Array(colors)
+  };
 };
 
 // --- Component: Foliage ---
@@ -387,11 +463,15 @@ const TopStar = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   );
 };
 
-// --- Component: Christmas Greeting Text ---
-// 圣诞树形成时显示"圣诞节快乐"的文字
+// --- Component: Christmas Greeting Text (Particle Version) ---
+// 圣诞树形成时显示"圣诞节快乐"的粒子文字
 const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const materialRef = useRef<any>(null);
   const [formedTime, setFormedTime] = useState(0);
+
+  // 生成粒子数据
+  const particleData = useMemo(() => generateTextParticles(isMobile ? 1000 : 3000), []);
 
   // 监听状态变化，记录形成时间
   useEffect(() => {
@@ -400,47 +480,44 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     } else if (state === 'CHAOS') {
       setFormedTime(0);
     }
-  }, [state]);
+  }, [state, formedTime]);
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
 
     const timeSinceFormed = formedTime ? (Date.now() - formedTime) / 1000 : 0;
 
-    // 控制显示/隐藏动画
-    const targetScale = state === 'FORMED' ? 1 : 0;
+    // 更新材质
+    if (materialRef.current) {
+      materialRef.current.uTime = clock.elapsedTime;
+      const targetProgress = state === 'FORMED' ? 1 : 0;
+      materialRef.current.uProgress = MathUtils.damp(materialRef.current.uProgress, targetProgress, 2.0, 0.016);
+    }
+
+    // 控制位置
     const targetY = state === 'FORMED' ? CONFIG.tree.height / 2 + 6 : -20;
-    groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.05);
     groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, targetY, 0.05);
 
-    // 旋转逻辑：
-    // 1. 刚形成时（0-2秒）：正面朝向观众，不旋转
-    // 2. 2秒后：开始缓慢旋转
-    if (state === 'FORMED') {
-      if (timeSinceFormed > 2) {
-        // 开始旋转
-        const rotateSpeed = 0.3;
-        groupRef.current.rotation.y = (timeSinceFormed - 2) * rotateSpeed;
-      }
-      // 轻微摇摆
-      groupRef.current.rotation.z = Math.sin(clock.getElapsedTime() * 0.5) * 0.05;
+    // 旋转逻辑：2秒后开始旋转
+    if (state === 'FORMED' && timeSinceFormed > 2) {
+      groupRef.current.rotation.y = (timeSinceFormed - 2) * 0.3;
     }
+    groupRef.current.rotation.z = Math.sin(clock.elapsedTime * 0.5) * 0.05;
   });
 
   return (
     <group ref={groupRef} position={[0, -20, 2]}>
-      <Float speed={1.2} rotationIntensity={0.05} floatIntensity={0.2}>
-        <Text
-          fontSize={3}
-          color="#FFD700"
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.1}
-          outlineColor="#FF0000"
-        >
-          圣诞节快乐
-        </Text>
-      </Float>
+      {/* 粒子文字 */}
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[particleData.positions, 3]} />
+          <bufferAttribute attach="attributes-aTargetPos" args={[particleData.targetPositions, 3]} />
+          <bufferAttribute attach="attributes-aRandom" args={[particleData.randoms, 1]} />
+          <bufferAttribute attach="attributes-aColor" args={[particleData.colors, 3]} />
+        </bufferGeometry>
+        {/* @ts-ignore */}
+        <textParticleMaterial ref={materialRef} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+      </points>
 
       {/* 添加额外的光环效果 */}
       {state === 'FORMED' && (
@@ -519,13 +596,14 @@ const Experience = ({ sceneState, rotationSpeed }: { sceneState: 'CHAOS' | 'FORM
 
 // --- Gesture Controller ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
+const GestureController = ({ onGesture, onMove, onPinch, onStatus, debugMode }: any) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let gestureRecognizer: GestureRecognizer;
     let requestRef: number;
+    let lastPinchState = false; // 记录上一次的捏合状态
 
     const setup = async () => {
       onStatus("DOWNLOADING AI...");
@@ -580,6 +658,23 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
               if (results.landmarks.length > 0) {
                 const speed = (0.5 - results.landmarks[0][0].x) * 0.15;
                 onMove(Math.abs(speed) > 0.01 ? speed : 0);
+
+                // 检测捏合手势：计算大拇指尖(4)和食指尖(8)的距离
+                const landmarks = results.landmarks[0];
+                const thumbTip = landmarks[4];
+                const indexTip = landmarks[8];
+                const dx = thumbTip.x - indexTip.x;
+                const dy = thumbTip.y - indexTip.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // 距离小于0.05表示捏合
+                const isPinching = distance < 0.05;
+
+                // 检测捏合状态变化（从未捏合到捏合）
+                if (isPinching && !lastPinchState) {
+                  onPinch(); // 触发捏合事件
+                }
+                lastPinchState = isPinching;
               }
             } else { onMove(0); if (debugMode) onStatus("AI READY: NO HAND"); }
         }
@@ -598,6 +693,51 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
   );
 };
 
+// --- Photo Viewer Component ---
+const PhotoViewer = ({ photoIndex, photos }: { photoIndex: number | null, photos: string[] }) => {
+  if (photoIndex === null) return null;
+
+  const photoPath = photos[photoIndex % photos.length];
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      pointerEvents: 'none'
+    }}>
+      <img
+        src={photoPath}
+        alt={`Photo ${photoIndex + 1}`}
+        style={{
+          maxWidth: '90%',
+          maxHeight: '90%',
+          objectFit: 'contain',
+          boxShadow: '0 0 50px rgba(255, 215, 0, 0.5)',
+          border: '10px solid #FFFAF0'
+        }}
+      />
+      <div style={{
+        position: 'absolute',
+        bottom: '50px',
+        color: '#FFD700',
+        fontSize: '24px',
+        fontWeight: 'bold',
+        textShadow: '0 0 10px rgba(255, 215, 0, 0.8)'
+      }}>
+        {photoIndex + 1} / {photos.length}
+      </div>
+    </div>
+  );
+};
+
 // --- App Entry ---
 export default function GrandTreeApp() {
   const [sceneState, setSceneState] = useState<'CHAOS' | 'FORMED'>('CHAOS');
@@ -606,6 +746,7 @@ export default function GrandTreeApp() {
   const [debugMode, setDebugMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [webGLError, setWebGLError] = useState<string | null>(null);
+  const [viewingPhotoIndex, setViewingPhotoIndex] = useState<number | null>(null);
 
   // 检测 WebGL 支持
   useEffect(() => {
@@ -619,6 +760,17 @@ export default function GrandTreeApp() {
       setWebGLError('WebGL error: ' + (e as Error).message);
     }
   }, []);
+
+  // 处理捏合手势：切换照片
+  const handlePinch = () => {
+    setViewingPhotoIndex((prev) => {
+      if (prev === null) {
+        return 0; // 第一次捏合，显示第一张照片
+      } else {
+        return (prev + 1) % bodyPhotoPaths.length; // 切换到下一张
+      }
+    });
+  };
 
   return (
     <div style={{ width: '100vw', height: '100vh', backgroundColor: '#000', position: 'relative', overflow: 'hidden' }}>
@@ -659,7 +811,10 @@ export default function GrandTreeApp() {
           )}
         </>
       )}
-      {enableAI && <GestureController onGesture={setSceneState} onMove={setRotationSpeed} onStatus={setAiStatus} debugMode={debugMode} />}
+      {enableAI && <GestureController onGesture={setSceneState} onMove={setRotationSpeed} onPinch={handlePinch} onStatus={setAiStatus} debugMode={debugMode} />}
+
+      {/* Photo Viewer */}
+      <PhotoViewer photoIndex={viewingPhotoIndex} photos={bodyPhotoPaths} />
 
       {/* UI - Stats */}
       <div style={{ position: 'absolute', bottom: '30px', left: '40px', color: '#888', zIndex: 10, fontFamily: 'sans-serif', userSelect: 'none' }}>

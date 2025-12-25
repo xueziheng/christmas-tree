@@ -34,13 +34,14 @@ All 3D components (foliage, ornaments, lights, star) support these states with s
 
 | Component | Lines | Purpose |
 |-----------|-------|---------|
-| `Foliage` | 92-124 | 15,000 particle-based needles with custom GLSL shader |
-| `PhotoOrnaments` | 127-234 | 300 double-sided Polaroid-style photos loaded from `/public/photos/` |
-| `ChristmasElements` | 237-289 | Gifts, ornaments, candy canes (200 items) |
-| `FairyLights` | 292-331 | 400 twinkling colored lights |
-| `TopStar` | 334-380 | Pure gold 3D star with extruded geometry |
-| `GestureController` | 426-504 | MediaPipe integration for hand gesture recognition |
-| `Experience` | 383-423 | Main scene composition with post-processing (Bloom + Vignette) |
+| `Foliage` | 100-132 | 15,000 particle-based needles with custom GLSL shader |
+| `PhotoOrnaments` | 135-242 | 300 double-sided Polaroid-style photos loaded from `/public/photos/` |
+| `ChristmasElements` | 245-297 | Gifts, ornaments, candy canes (200 items) |
+| `FairyLights` | 300-339 | 400 twinkling colored lights |
+| `TopStar` | 342-388 | Pure gold 3D star with extruded geometry |
+| `ChristmasGreeting` | 391-472 | "圣诞节快乐" text with sparkles, appears when tree forms |
+| `GestureController` | 522-600+ | MediaPipe integration for hand gesture recognition |
+| `Experience` | 475-518 | Main scene composition with post-processing (Bloom + Vignette) |
 
 ### Configuration System
 All visual parameters are centralized in the `CONFIG` object (lines 28-55):
@@ -51,10 +52,10 @@ All visual parameters are centralized in the `CONFIG` object (lines 28-55):
 
 ### Photo System
 Photos are loaded from `public/photos/`:
-- `top.jpg` - Tree top star (not currently displayed on star, star is pure gold)
-- `1.jpg`, `2.jpg`, etc. - Tree ornaments
+- `top.webp` - Tree top star (not currently displayed on star, star is pure gold)
+- `1.webp`, `2.webp`, etc. - Tree ornaments (WebP format for smaller file size)
 
-**To add/change photos**: Update `TOTAL_NUMBERED_PHOTOS` constant (line 20) and place files in `public/photos/`.
+**To add/change photos**: Update `TOTAL_PHOTOS` constant (line 12) and place files in `public/photos/`.
 
 ### Shader Extension Pattern
 Custom materials use `shaderMaterial` from `@react-three/drei` with `extend()` to make them available as JSX elements:
@@ -85,6 +86,24 @@ Uses Google MediaPipe Tasks Vision for hand tracking:
 
 Debug mode available via UI button to see camera view and hand tracking visualization.
 
+## Photo Management Scripts
+
+The project includes utility scripts in `scripts/` for managing photos:
+
+```bash
+# Download photos from Pexels API (requires PEXELS_API_KEY in .env)
+node scripts/fetch-pexels.mjs
+
+# Compress and convert photos to WebP format
+node scripts/compress-photos.mjs
+
+# Resize photos to 600px width
+node scripts/resize-compress-photos.mjs
+
+# Rename photos to numbered sequence (1.webp, 2.webp, etc.)
+node scripts/rename-photos.mjs
+```
+
 ## Tech Stack
 
 - **React 18.3.1** + **Vite 5.4.11**
@@ -93,6 +112,19 @@ Debug mode available via UI button to see camera view and hand tracking visualiz
 - **@react-three/postprocessing** - Bloom, Vignette
 - **maath** - Random point generation in sphere
 - **@mediapipe/tasks-vision** - AI gesture recognition
+
+## Mobile Optimization
+
+The app automatically detects mobile devices and applies optimizations:
+- Reduces particle count (4000 vs 15000)
+- Reduces photo count (50 vs 300)
+- Reduces decorations (50 vs 200)
+- Reduces lights (100 vs 400)
+- Disables AI gesture control
+- Disables post-processing effects (Bloom, Vignette)
+- Disables Stars background
+
+Detection: `isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768`
 
 ## Important Notes
 
@@ -105,3 +137,5 @@ Debug mode available via UI button to see camera view and hand tracking visualiz
 4. **Language**: Primary documentation (README.md) is in Chinese. The UI also includes Chinese labels.
 
 5. **Shader Inline**: GLSL shaders are embedded directly in component definitions as template strings.
+
+6. **Build Configuration**: Vite config includes manual chunk splitting for three.js, mediapipe, and R3F libraries to optimize bundle size (see `vite.config.ts`).
