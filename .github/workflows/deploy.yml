@@ -50,6 +50,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Stamp build (deploy check)
+        run: |
+          echo "sha=$GITHUB_SHA" > dist/deploy-check.txt
+          date -u >> dist/deploy-check.txt
+
       - name: Debug (after build) - list dist output
         run: |
           echo "=== ls dist ==="
