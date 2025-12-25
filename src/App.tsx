@@ -498,7 +498,7 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   });
 
   return (
-    <group ref={groupRef} position={[0, -20, 2]}>
+    <group ref={groupRef} position={[2, -20, 2]}>
       {/* 文字 */}
       <Float speed={1.2} rotationIntensity={0.05} floatIntensity={0.2}>
         <Text
@@ -772,17 +772,12 @@ export default function GrandTreeApp() {
     }
   }, []);
 
-  // 处理捏合手势：捏合时显示照片，松开时隐藏
+  // 处理捏合手势：捏合时随机显示照片，松开时隐藏
   const handlePinch = (isPinching: boolean) => {
     if (isPinching) {
-      // 开始捏合，切换到下一张照片并显示
-      setViewingPhotoIndex((prev) => {
-        if (prev === null) {
-          return 0;
-        } else {
-          return (prev + 1) % bodyPhotoPaths.length;
-        }
-      });
+      // 随机选择一张照片
+      const randomIndex = Math.floor(Math.random() * bodyPhotoPaths.length);
+      setViewingPhotoIndex(randomIndex);
     } else {
       // 松开捏合，隐藏照片
       setViewingPhotoIndex(null);
