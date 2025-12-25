@@ -23,7 +23,8 @@ import {
   Float,
   Stars,
   Sparkles,
-  useTexture
+  useTexture,
+  Text
 } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -463,15 +464,11 @@ const TopStar = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   );
 };
 
-// --- Component: Christmas Greeting Text (Particle Version) ---
-// 圣诞树形成时显示"圣诞节快乐"的粒子文字
+// --- Component: Christmas Greeting Text ---
+// 圣诞树形成时显示"圣诞节快乐"的文字
 const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const materialRef = useRef<any>(null);
   const [formedTime, setFormedTime] = useState(0);
-
-  // 生成粒子数据
-  const particleData = useMemo(() => generateTextParticles(isMobile ? 1000 : 3000), []);
 
   // 监听状态变化，记录形成时间
   useEffect(() => {
@@ -487,15 +484,10 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
 
     const timeSinceFormed = formedTime ? (Date.now() - formedTime) / 1000 : 0;
 
-    // 更新材质
-    if (materialRef.current) {
-      materialRef.current.uTime = clock.elapsedTime;
-      const targetProgress = state === 'FORMED' ? 1 : 0;
-      materialRef.current.uProgress = MathUtils.damp(materialRef.current.uProgress, targetProgress, 2.0, 0.016);
-    }
-
-    // 控制位置
+    // 控制显示/隐藏动画
+    const targetScale = state === 'FORMED' ? 1 : 0;
     const targetY = state === 'FORMED' ? CONFIG.tree.height / 2 + 6 : -20;
+    groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.05);
     groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, targetY, 0.05);
 
     // 旋转逻辑：2秒后开始旋转
@@ -507,17 +499,19 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
 
   return (
     <group ref={groupRef} position={[0, -20, 2]}>
-      {/* 粒子文字 */}
-      <points>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[particleData.positions, 3]} />
-          <bufferAttribute attach="attributes-aTargetPos" args={[particleData.targetPositions, 3]} />
-          <bufferAttribute attach="attributes-aRandom" args={[particleData.randoms, 1]} />
-          <bufferAttribute attach="attributes-aColor" args={[particleData.colors, 3]} />
-        </bufferGeometry>
-        {/* @ts-ignore */}
-        <textParticleMaterial ref={materialRef} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
-      </points>
+      {/* 文字 */}
+      <Float speed={1.2} rotationIntensity={0.05} floatIntensity={0.2}>
+        <Text
+          fontSize={3.5}
+          color="#FFD700"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.15}
+          outlineColor="#FF0000"
+        >
+          圣诞节快乐
+        </Text>
+      </Float>
 
       {/* 添加额外的光环效果 */}
       {state === 'FORMED' && (
@@ -615,7 +609,7 @@ const GestureController = ({ onGesture, onMove, onPinch, onStatus, debugMode }: 
             delegate: "GPU"
           },
           runningMode: "VIDEO",
-          numHands: 1
+          numHands: 2
         });
         onStatus("REQUESTING CAMERA...");
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -650,33 +644,50 @@ const GestureController = ({ onGesture, onMove, onPinch, onStatus, debugMode }: 
             } else if (ctx && !debugMode) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
             if (results.gestures.length > 0) {
-              const name = results.gestures[0][0].categoryName; const score = results.gestures[0][0].score;
-              if (score > 0.4) {
-                 if (name === "Open_Palm") onGesture("CHAOS"); if (name === "Closed_Fist") onGesture("FORMED");
-                 if (debugMode) onStatus(`DETECTED: ${name}`);
-              }
-              if (results.landmarks.length > 0) {
-                const speed = (0.5 - results.landmarks[0][0].x) * 0.15;
-                onMove(Math.abs(speed) > 0.01 ? speed : 0);
+              // 遍历所有检测到的手
+              let hasPinch = false;
 
-                // 检测捏合手势：计算大拇指尖(4)和食指尖(8)的距离
-                const landmarks = results.landmarks[0];
+              for (let i = 0; i < results.gestures.length; i++) {
+                const gesture = results.gestures[i][0];
+                const landmarks = results.landmarks[i];
+
+                // 检测手势（握拳/张开手掌）
+                if (gesture.score > 0.4) {
+                  if (gesture.categoryName === "Open_Palm") onGesture("CHAOS");
+                  if (gesture.categoryName === "Closed_Fist") onGesture("FORMED");
+                }
+
+                // 检测捏合手势
                 const thumbTip = landmarks[4];
                 const indexTip = landmarks[8];
                 const dx = thumbTip.x - indexTip.x;
                 const dy = thumbTip.y - indexTip.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
-                // 距离小于0.05表示捏合
-                const isPinching = distance < 0.05;
-
-                // 检测捏合状态变化（从未捏合到捏合）
-                if (isPinching && !lastPinchState) {
-                  onPinch(); // 触发捏合事件
+                if (distance < 0.05) {
+                  hasPinch = true;
                 }
-                lastPinchState = isPinching;
               }
-            } else { onMove(0); if (debugMode) onStatus("AI READY: NO HAND"); }
+
+              // 捏合状态变化时触发
+              if (hasPinch && !lastPinchState) {
+                onPinch(true); // 开始捏合
+              } else if (!hasPinch && lastPinchState) {
+                onPinch(false); // 松开捏合
+              }
+              lastPinchState = hasPinch;
+
+              // 手掌移动控制旋转
+              if (results.landmarks.length > 0) {
+                const speed = (0.5 - results.landmarks[0][0].x) * 0.15;
+                onMove(Math.abs(speed) > 0.01 ? speed : 0);
+              }
+            } else {
+              onMove(0);
+              if (lastPinchState) onPinch(false);
+              lastPinchState = false;
+              if (debugMode) onStatus("AI READY: NO HAND");
+            }
         }
         requestRef = requestAnimationFrame(predictWebcam);
       }
@@ -761,15 +772,21 @@ export default function GrandTreeApp() {
     }
   }, []);
 
-  // 处理捏合手势：切换照片
-  const handlePinch = () => {
-    setViewingPhotoIndex((prev) => {
-      if (prev === null) {
-        return 0; // 第一次捏合，显示第一张照片
-      } else {
-        return (prev + 1) % bodyPhotoPaths.length; // 切换到下一张
-      }
-    });
+  // 处理捏合手势：捏合时显示照片，松开时隐藏
+  const handlePinch = (isPinching: boolean) => {
+    if (isPinching) {
+      // 开始捏合，切换到下一张照片并显示
+      setViewingPhotoIndex((prev) => {
+        if (prev === null) {
+          return 0;
+        } else {
+          return (prev + 1) % bodyPhotoPaths.length;
+        }
+      });
+    } else {
+      // 松开捏合，隐藏照片
+      setViewingPhotoIndex(null);
+    }
   };
 
   return (
