@@ -403,22 +403,29 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   }, [state]);
 
   // 创建文字粒子数据
-  const { positions, colors, chaosPositions } = useMemo(() => {
+  const particleData = useMemo(() => {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const chaos: number[] = [];
+
     // 创建离屏 canvas 来绘制文字
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return { positions: new Float32Array(0), colors: new Float32Array(0), chaosPositions: new Float32Array(0) };
 
-    const fontSize = 120;
+    const fontSize = 150;
     const text = '圣诞节快乐';
-    ctx.font = `bold ${fontSize}px "Microsoft YaHei", "SimHei", sans-serif`;
+    // 使用系统默认中文字体
+    ctx.font = `bold ${fontSize}px sans-serif`;
     const metrics = ctx.measureText(text);
-    const width = Math.ceil(metrics.width);
-    const height = fontSize * 2;
+    const width = Math.ceil(metrics.width) + 20;
+    const height = fontSize * 2.5;
 
     canvas.width = width;
     canvas.height = height;
-    ctx.font = `bold ${fontSize}px "Microsoft YaHei", "SimHei", sans-serif`;
+
+    // 重新设置字体（canvas resize 后会重置）
+    ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -427,21 +434,18 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const chaos: number[] = [];
-
     // 采样文字像素，每个粒子代表一个像素
-    const step = 4; // 采样间隔
+    const step = 3; // 减小采样间隔，增加粒子密度
     for (let y = 0; y < height; y += step) {
       for (let x = 0; x < width; x += step) {
         const i = (y * width + x) * 4;
         if (data[i] > 128) { // 如果像素足够亮
-          // 文字位置（居中）
-          positions.push((x - width / 2) * 0.05, (height / 2 - y) * 0.05, 0);
+          // 文字位置（居中，缩放系数更大）
+          const scale = 0.08;
+          positions.push((x - width / 2) * scale, (height / 2 - y) * scale, 0);
 
-          // 彩虹颜色
-          const hue = (x / width) * 60 + 30; // 金色到红色范围
+          // 彩虹颜色 - 从金色到红色
+          const hue = (x / width) * 60 + 30;
           const color = new THREE.Color(`hsl(${hue}, 100%, 60%)`);
           colors.push(color.r, color.g, color.b);
 
@@ -455,6 +459,8 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
       }
     }
 
+    console.log(`Particle text: ${positions.length / 3} particles generated`);
+
     return {
       positions: new Float32Array(positions),
       colors: new Float32Array(colors),
@@ -465,16 +471,13 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   // 创建粒子几何体和材质
   const particlesGeometry = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(particleData.positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(particleData.colors, 3));
     return geometry;
-  }, [positions, colors]);
+  }, [particleData.positions, particleData.colors]);
 
   // 当前粒子位置（用于动画）
-  const currentPositions = useMemo(() => {
-    // 初始时使用混沌位置
-    return new Float32Array(chaosPositions);
-  }, [chaosPositions]);
+  const currentPositions = useRef<Float32Array>(new Float32Array(particleData.chaosPositions));
 
   useFrame(({ clock }) => {
     if (!particlesRef.current) return;
@@ -508,17 +511,18 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     // 粒子动画
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
-      const targetX = positions[i3];
-      const targetY = positions[i3 + 1];
-      const targetZ = positions[i3 + 2];
+      const targetX = particleData.positions[i3];
+      const targetY = particleData.positions[i3 + 1];
+      const targetZ = particleData.positions[i3 + 2];
 
       if (state === 'FORMED') {
         // 移动到目标位置
-        currentPositions[i3] += (targetX - currentPositions[i3]) * 0.05;
-        currentPositions[i3 + 1] += (targetY - currentPositions[i3 + 1]) * 0.05;
-        currentPositions[i3 + 2] += (targetZ - currentPositions[i3 + 2]) * 0.05;
+        const curPos = currentPositions.current;
+        curPos[i3] += (targetX - curPos[i3]) * 0.05;
+        curPos[i3 + 1] += (targetY - curPos[i3 + 1]) * 0.05;
+        curPos[i3 + 2] += (targetZ - curPos[i3 + 2]) * 0.05;
 
-        positionsAttr.setXYZ(i, currentPositions[i3], currentPositions[i3 + 1], currentPositions[i3 + 2]);
+        positionsAttr.setXYZ(i, curPos[i3], curPos[i3 + 1], curPos[i3 + 2]);
       }
     }
     positionsAttr.needsUpdate = true;
@@ -528,7 +532,7 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     <group ref={groupRef} position={[0, -20, 2]}>
       <points ref={particlesRef} geometry={particlesGeometry}>
         <pointsMaterial
-          size={0.3}
+          size={0.6}
           vertexColors
           transparent
           opacity={0.9}
