@@ -87,30 +87,6 @@ const FoliageMaterial = shaderMaterial(
 );
 extend({ FoliageMaterial });
 
-// --- Shader Material (Text Particles) ---
-const TextParticleMaterial = shaderMaterial(
-  { uTime: 0, uProgress: 0 },
-  `uniform float uTime; uniform float uProgress; attribute vec3 aTargetPos; attribute float aRandom; attribute vec3 aColor;
-  varying vec3 vColor; varying float vAlpha;
-  void main() {
-    vec3 noise = vec3(sin(uTime * 2.0 + position.x * 10.0), cos(uTime * 1.5 + position.y * 10.0), sin(uTime * 2.5 + position.z * 10.0)) * 0.3;
-    vec3 finalPos = mix(position + noise, aTargetPos, uProgress);
-    vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
-    gl_PointSize = (80.0 * (0.8 + aRandom * 0.4)) / -mvPosition.z;
-    gl_Position = projectionMatrix * mvPosition;
-    vColor = aColor;
-    vAlpha = uProgress;
-  }`,
-  `varying vec3 vColor; varying float vAlpha;
-  void main() {
-    float r = distance(gl_PointCoord, vec2(0.5));
-    if (r > 0.5) discard;
-    float alpha = (1.0 - r * 2.0) * vAlpha;
-    gl_FragColor = vec4(vColor * 2.0, alpha);
-  }`
-);
-extend({ TextParticleMaterial });
-
 // --- Helper: Tree Shape ---
 const getTreePosition = () => {
   const h = CONFIG.tree.height; const rBase = CONFIG.tree.radius;
@@ -118,59 +94,6 @@ const getTreePosition = () => {
   const currentRadius = rBase * (1 - normalizedY); const theta = Math.random() * Math.PI * 2;
   const r = Math.random() * currentRadius;
   return [r * Math.cos(theta), y, r * Math.sin(theta)];
-};
-
-// --- Helper: Generate Text Particle Positions ---
-const generateTextParticles = (count: number) => {
-  // 为"圣诞节快乐"生成粒子位置（简化版：使用网格采样）
-  const positions: number[] = [];
-  const targetPositions: number[] = [];
-  const randoms: number[] = [];
-  const colors: number[] = [];
-
-  // 彩虹渐变色
-  const rainbowColors = [
-    [1.0, 0.0, 0.0], // 红
-    [1.0, 0.5, 0.0], // 橙
-    [1.0, 1.0, 0.0], // 黄
-    [0.0, 1.0, 0.0], // 绿
-    [0.0, 0.5, 1.0], // 蓝
-    [0.5, 0.0, 1.0], // 紫
-  ];
-
-  // 文字区域：宽20，高6
-  const textWidth = 20;
-  const textHeight = 6;
-
-  for (let i = 0; i < count; i++) {
-    // 初始位置：随机散布在远处
-    const theta = Math.random() * Math.PI * 2;
-    const radius = 30 + Math.random() * 20;
-    positions.push(
-      Math.cos(theta) * radius,
-      (Math.random() - 0.5) * 40,
-      Math.sin(theta) * radius
-    );
-
-    // 目标位置：文字形状（简化为矩形区域）
-    const x = (Math.random() - 0.5) * textWidth;
-    const y = (Math.random() - 0.5) * textHeight;
-    targetPositions.push(x, y, 0);
-
-    randoms.push(Math.random());
-
-    // 根据 x 位置分配彩虹色
-    const colorIndex = Math.floor(((x + textWidth / 2) / textWidth) * rainbowColors.length) % rainbowColors.length;
-    const color = rainbowColors[colorIndex];
-    colors.push(color[0], color[1], color[2]);
-  }
-
-  return {
-    positions: new Float32Array(positions),
-    targetPositions: new Float32Array(targetPositions),
-    randoms: new Float32Array(randoms),
-    colors: new Float32Array(colors)
-  };
 };
 
 // --- Component: Foliage ---
