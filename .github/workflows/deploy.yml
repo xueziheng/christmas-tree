@@ -17,9 +17,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout (with LFS)
         uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 1
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,8 +34,30 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Debug (before build) - list public/photos
+        run: |
+          echo "=== repo root ==="
+          pwd
+          echo "=== ls ==="
+          ls -la
+          echo "=== ls public ==="
+          ls -la public || true
+          echo "=== ls public/photos ==="
+          ls -la public/photos || true
+          echo "=== check if 1.webp is LFS pointer ==="
+          head -n 5 public/photos/1.webp || true
+
       - name: Build
         run: npm run build
+
+      - name: Debug (after build) - list dist output
+        run: |
+          echo "=== ls dist ==="
+          ls -la dist || true
+          echo "=== ls dist/photos ==="
+          ls -la dist/photos || true
+          echo "=== find webp in dist ==="
+          find dist -maxdepth 4 -type f -name "*.webp" -print || true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
