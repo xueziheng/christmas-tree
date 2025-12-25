@@ -11,9 +11,9 @@ const enableAI = !isMobile;
 // 照片通过 scripts/fetch-pexels.mjs 从 Pexels 下载，然后用 scripts/compress-photos.mjs 转换为 WebP
 const TOTAL_PHOTOS = 133; // 总共 133 张照片（不包括 top.jpg）
 const bodyPhotoPaths = [
-  '/photos/top.webp',
+  `${import.meta.env.BASE_URL}photos/top.webp`,
   // Pexels photos (按文件名排序后的顺序)
-  ...Array.from({ length: TOTAL_PHOTOS }, (_, i) => `/photos/${i + 1}.webp`)
+  ...Array.from({ length: TOTAL_PHOTOS }, (_, i) => `${import.meta.env.BASE_URL}photos/${i + 1}.webp`)
 ];
 import {
   OrbitControls,
