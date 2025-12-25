@@ -23,7 +23,9 @@ import {
   Float,
   Stars,
   Sparkles,
-  useTexture
+  useTexture,
+  Text3D,
+  Center
 } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -386,6 +388,123 @@ const TopStar = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   );
 };
 
+// --- Component: Christmas Greeting Text ---
+// 圣诞树形成时显示"圣诞节快乐"的炫酷 3D 文字
+const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
+  const groupRef = useRef<THREE.Group>(null);
+
+  // 彩虹渐变材质
+  const rainbowMaterial = useMemo(() => {
+    // 使用自定义 shader 材质实现彩虹渐变
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uColor1: { value: new THREE.Color('#FF0000') }, // 红
+        uColor2: { value: new THREE.Color('#FFD700') }, // 金
+        uColor3: { value: new THREE.Color('#00FF00') }, // 绿
+        uColor4: { value: new THREE.Color('#00BFFF') }, // 蓝
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vPosition;
+        void main() {
+          vUv = uv;
+          vPosition = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform vec3 uColor1;
+        uniform vec3 uColor2;
+        uniform vec3 uColor3;
+        uniform vec3 uColor4;
+        varying vec2 vUv;
+        varying vec3 vPosition;
+
+        void main() {
+          // 创建流动的彩虹效果
+          float t = uTime * 0.5 + vUv.x * 2.0 + vPosition.y * 0.5;
+          vec3 color = mix(uColor1, uColor2, sin(t) * 0.5 + 0.5);
+          color = mix(color, uColor3, sin(t + 2.094) * 0.5 + 0.5);
+          color = mix(color, uColor4, sin(t + 4.189) * 0.5 + 0.5);
+
+          // 添加发光脉冲
+          float pulse = sin(uTime * 2.0) * 0.3 + 0.7;
+          color *= pulse;
+
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `,
+      transparent: true,
+      side: THREE.DoubleSide,
+    });
+    return material;
+  }, []);
+
+  // 更新 shader 时间 uniform
+  useFrame(({ clock }) => {
+    if (groupRef.current && state === 'FORMED') {
+      (rainbowMaterial as THREE.ShaderMaterial).uniforms.uTime.value = clock.getElapsedTime();
+
+      // 缓慢旋转文字
+      groupRef.current.rotation.y = Math.sin(clock.getElapsedTime() * 0.3) * 0.1;
+    }
+
+    // 控制显示/隐藏动画
+    if (groupRef.current) {
+      const targetScale = state === 'FORMED' ? 1 : 0;
+      const targetY = state === 'FORMED' ? CONFIG.tree.height / 2 + 4 : -20;
+      groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.03);
+      groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, targetY, 0.03);
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={[0, -20, 0]}>
+      <Float speed={1.5} rotationIntensity={0.1} floatIntensity={0.3}>
+        <Center>
+          <Text3D
+            font="/fonts/helvetiker_regular.typeface.json"
+            size={1.5}
+            height={0.3}
+            curveSegments={12}
+            bevelEnabled
+            bevelThickness={0.05}
+            bevelSize={0.03}
+            bevelOffset={0}
+            bevelSegments={5}
+          >
+            圣诞节快乐
+            <meshStandardMaterial
+              color="#FFD700"
+              emissive="#FF0000"
+              emissiveIntensity={2}
+              toneMapped={false}
+            />
+          </Text3D>
+        </Center>
+      </Float>
+
+      {/* 添加额外的光环效果 */}
+      {state === 'FORMED' && (
+        <>
+          <Sparkles
+            count={100}
+            scale={[15, 5, 5]}
+            size={6}
+            speed={0.5}
+            opacity={0.6}
+            color="#FFD700"
+            position={[0, 0, 1]}
+          />
+          <pointLight position={[0, 0, 3]} intensity={20} color="#FFD700" />
+        </>
+      )}
+    </group>
+  );
+};
+
 // --- Main Scene Experience ---
 const Experience = ({ sceneState, rotationSpeed }: { sceneState: 'CHAOS' | 'FORMED', rotationSpeed: number }) => {
   const controlsRef = useRef<any>(null);
@@ -417,6 +536,7 @@ const Experience = ({ sceneState, rotationSpeed }: { sceneState: 'CHAOS' | 'FORM
            {!isMobile && <ChristmasElements state={sceneState} />}
            <FairyLights state={sceneState} />
            <TopStar state={sceneState} />
+           <ChristmasGreeting state={sceneState} />
         </Suspense>
         <Sparkles count={isMobile ? 50 : 600} scale={50} size={8} speed={0.4} opacity={0.4} color={CONFIG.colors.silver} />
       </group>
