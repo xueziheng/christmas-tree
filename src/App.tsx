@@ -23,8 +23,7 @@ import {
   Float,
   Stars,
   Sparkles,
-  useTexture,
-  Text
+  useTexture
 } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -387,56 +386,157 @@ const TopStar = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   );
 };
 
-// --- Component: Christmas Greeting Text ---
-// 圣诞树形成时显示"圣诞节快乐"的炫酷文字
+// --- Component: Christmas Greeting Text (Particle Effect) ---
+// 圣诞树形成时显示"圣诞节快乐"的粒子文字效果
 const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const particlesRef = useRef<THREE.Points>(null);
+  const [formedTime, setFormedTime] = useState(0);
+
+  // 监听状态变化，记录形成时间
+  useEffect(() => {
+    if (state === 'FORMED' && formedTime === 0) {
+      setFormedTime(Date.now());
+    } else if (state === 'CHAOS') {
+      setFormedTime(0);
+    }
+  }, [state]);
+
+  // 创建文字粒子数据
+  const { positions, colors, chaosPositions } = useMemo(() => {
+    // 创建离屏 canvas 来绘制文字
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { positions: new Float32Array(0), colors: new Float32Array(0), chaosPositions: new Float32Array(0) };
+
+    const fontSize = 120;
+    const text = '圣诞节快乐';
+    ctx.font = `bold ${fontSize}px "Microsoft YaHei", "SimHei", sans-serif`;
+    const metrics = ctx.measureText(text);
+    const width = Math.ceil(metrics.width);
+    const height = fontSize * 2;
+
+    canvas.width = width;
+    canvas.height = height;
+    ctx.font = `bold ${fontSize}px "Microsoft YaHei", "SimHei", sans-serif`;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, width / 2, height / 2);
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const chaos: number[] = [];
+
+    // 采样文字像素，每个粒子代表一个像素
+    const step = 4; // 采样间隔
+    for (let y = 0; y < height; y += step) {
+      for (let x = 0; x < width; x += step) {
+        const i = (y * width + x) * 4;
+        if (data[i] > 128) { // 如果像素足够亮
+          // 文字位置（居中）
+          positions.push((x - width / 2) * 0.05, (height / 2 - y) * 0.05, 0);
+
+          // 彩虹颜色
+          const hue = (x / width) * 60 + 30; // 金色到红色范围
+          const color = new THREE.Color(`hsl(${hue}, 100%, 60%)`);
+          colors.push(color.r, color.g, color.b);
+
+          // 混沌位置（随机散布）
+          chaos.push(
+            (Math.random() - 0.5) * 50,
+            (Math.random() - 0.5) * 50,
+            (Math.random() - 0.5) * 50
+          );
+        }
+      }
+    }
+
+    return {
+      positions: new Float32Array(positions),
+      colors: new Float32Array(colors),
+      chaosPositions: new Float32Array(chaos)
+    };
+  }, []);
+
+  // 创建粒子几何体和材质
+  const particlesGeometry = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return geometry;
+  }, [positions, colors]);
+
+  // 当前粒子位置（用于动画）
+  const currentPositions = useMemo(() => {
+    // 初始时使用混沌位置
+    return new Float32Array(chaosPositions);
+  }, [chaosPositions]);
 
   useFrame(({ clock }) => {
+    if (!particlesRef.current) return;
+
+    const positionsAttr = particlesRef.current.geometry.attributes.position;
+    const count = positionsAttr.count;
+    const elapsed = clock.getElapsedTime();
+    const timeSinceFormed = formedTime ? (Date.now() - formedTime) / 1000 : 0;
+
     // 控制显示/隐藏动画
     if (groupRef.current) {
       const targetScale = state === 'FORMED' ? 1 : 0;
-      // 位置更高，避免被圣诞树挡住
       const targetY = state === 'FORMED' ? CONFIG.tree.height / 2 + 6 : -20;
       groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.03);
       groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, targetY, 0.03);
 
-      // 轻微摇摆效果
+      // 旋转逻辑：
+      // 1. 刚形成时（0-2秒）：正面朝向观众，不旋转
+      // 2. 2秒后：开始缓慢旋转
       if (state === 'FORMED') {
-        groupRef.current.rotation.z = Math.sin(clock.getElapsedTime() * 0.5) * 0.05;
+        if (timeSinceFormed > 2) {
+          // 开始旋转
+          const rotateSpeed = 0.3;
+          groupRef.current.rotation.y = (timeSinceFormed - 2) * rotateSpeed;
+        }
+        // 轻微摇摆
+        groupRef.current.rotation.z = Math.sin(elapsed * 0.5) * 0.05;
       }
     }
+
+    // 粒子动画
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const targetX = positions[i3];
+      const targetY = positions[i3 + 1];
+      const targetZ = positions[i3 + 2];
+
+      if (state === 'FORMED') {
+        // 移动到目标位置
+        currentPositions[i3] += (targetX - currentPositions[i3]) * 0.05;
+        currentPositions[i3 + 1] += (targetY - currentPositions[i3 + 1]) * 0.05;
+        currentPositions[i3 + 2] += (targetZ - currentPositions[i3 + 2]) * 0.05;
+
+        positionsAttr.setXYZ(i, currentPositions[i3], currentPositions[i3 + 1], currentPositions[i3 + 2]);
+      }
+    }
+    positionsAttr.needsUpdate = true;
   });
 
   return (
     <group ref={groupRef} position={[0, -20, 2]}>
-      <Float speed={1.2} rotationIntensity={0.05} floatIntensity={0.2}>
-        {/* 主文字 - 金色发光 */}
-        <Text
-          fontSize={3}
-          color="#FFD700"
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.15}
-          outlineColor="#FF0000"
-        >
-          圣诞节快乐
-        </Text>
-
-        {/* 倒影效果 */}
-        <Text
-          fontSize={3}
-          color="#AA8800"
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.1}
-          outlineColor="#008800"
-          position={[0, -0.5, -0.5]}
-          rotation={[Math.PI, 0, 0]}
-        >
-          圣诞节快乐
-        </Text>
-      </Float>
+      <points ref={particlesRef} geometry={particlesGeometry}>
+        <pointsMaterial
+          size={0.3}
+          vertexColors
+          transparent
+          opacity={0.9}
+          sizeAttenuation
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </points>
 
       {/* 添加额外的光环效果 */}
       {state === 'FORMED' && (
