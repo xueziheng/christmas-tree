@@ -402,7 +402,7 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     }
   }, [state]);
 
-  // 创建文字粒子数据
+  // 创建文字粒子数据 - 使用更简单可靠的方法
   const particleData = useMemo(() => {
     const positions: number[] = [];
     const colors: number[] = [];
@@ -411,37 +411,48 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     // 创建离屏 canvas 来绘制文字
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    if (!ctx) return { positions: new Float32Array(0), colors: new Float32Array(0), chaosPositions: new Float32Array(0) };
+    if (!ctx) {
+      console.error('Failed to get 2D context');
+      return { positions: new Float32Array(0), colors: new Float32Array(0), chaosPositions: new Float32Array(0) };
+    }
 
-    const fontSize = 150;
+    const fontSize = 200;
     const text = '圣诞节快乐';
-    // 使用系统默认中文字体
-    ctx.font = `bold ${fontSize}px sans-serif`;
+
+    // 设置更大的 canvas
+    ctx.font = `bold ${fontSize}px Arial, "Microsoft YaHei", "SimHei", sans-serif`;
     const metrics = ctx.measureText(text);
-    const width = Math.ceil(metrics.width) + 20;
-    const height = fontSize * 2.5;
+    const width = Math.ceil(metrics.width) + 40;
+    const height = fontSize * 3;
 
     canvas.width = width;
     canvas.height = height;
 
     // 重新设置字体（canvas resize 后会重置）
-    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.font = `bold ${fontSize}px Arial, "Microsoft YaHei", "SimHei", sans-serif`;
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
+    // 绘制文字
     ctx.fillText(text, width / 2, height / 2);
 
+    // 获取像素数据
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
-    // 采样文字像素，每个粒子代表一个像素
-    const step = 3; // 减小采样间隔，增加粒子密度
+    let pixelCount = 0;
+
+    // 采样文字像素
+    const step = 2; // 更密集的采样
     for (let y = 0; y < height; y += step) {
       for (let x = 0; x < width; x += step) {
         const i = (y * width + x) * 4;
-        if (data[i] > 128) { // 如果像素足够亮
-          // 文字位置（居中，缩放系数更大）
-          const scale = 0.08;
+        // 检查红色通道是否足够亮
+        if (data[i] > 200) {
+          pixelCount++;
+          // 文字位置（居中）
+          const scale = 0.12; // 增大缩放系数
           positions.push((x - width / 2) * scale, (height / 2 - y) * scale, 0);
 
           // 彩虹颜色 - 从金色到红色
@@ -449,17 +460,35 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
           const color = new THREE.Color(`hsl(${hue}, 100%, 60%)`);
           colors.push(color.r, color.g, color.b);
 
-          // 混沌位置（随机散布）
+          // 混沌位置
           chaos.push(
-            (Math.random() - 0.5) * 50,
-            (Math.random() - 0.5) * 50,
-            (Math.random() - 0.5) * 50
+            (Math.random() - 0.5) * 60,
+            (Math.random() - 0.5) * 60,
+            (Math.random() - 0.5) * 60
           );
         }
       }
     }
 
-    console.log(`Particle text: ${positions.length / 3} particles generated`);
+    console.log(`Text "${text}": canvas ${width}x${height}, ${pixelCount} particles`);
+
+    // 如果没有生成粒子，使用备用方案
+    if (pixelCount === 0) {
+      console.error('No particles generated! Using fallback pattern...');
+      // 创建一个简单的圆形图案作为备用
+      for (let i = 0; i < 500; i++) {
+        const angle = (i / 500) * Math.PI * 2;
+        const radius = 5 + Math.random() * 3;
+        positions.push(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+        const color = new THREE.Color(`hsl(${(i / 500) * 60 + 30}, 100%, 60%)`);
+        colors.push(color.r, color.g, color.b);
+        chaos.push(
+          (Math.random() - 0.5) * 60,
+          (Math.random() - 0.5) * 60,
+          (Math.random() - 0.5) * 60
+        );
+      }
+    }
 
     return {
       positions: new Float32Array(positions),
@@ -532,10 +561,10 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     <group ref={groupRef} position={[0, -20, 2]}>
       <points ref={particlesRef} geometry={particlesGeometry}>
         <pointsMaterial
-          size={0.6}
+          size={1.2}
           vertexColors
           transparent
-          opacity={0.9}
+          opacity={1}
           sizeAttenuation
           blending={THREE.AdditiveBlending}
           depthWrite={false}
