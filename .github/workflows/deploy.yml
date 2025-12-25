@@ -17,7 +17,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout (with LFS)
         uses: actions/checkout@v4
@@ -34,31 +33,19 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Debug (before build) - list public/photos
-        run: |
-          echo "=== repo root ==="
-          pwd
-          echo "=== ls ==="
-          ls -la
-          echo "=== ls public ==="
-          ls -la public || true
-          echo "=== ls public/photos ==="
-          ls -la public/photos || true
-          echo "=== check if 1.webp is LFS pointer ==="
-          head -n 5 public/photos/1.webp || true
-
       - name: Build
         run: npm run build
 
       - name: Stamp build (deploy check)
         run: |
           echo "sha=$GITHUB_SHA" > dist/deploy-check.txt
+          echo "run_id=$GITHUB_RUN_ID" >> dist/deploy-check.txt
           date -u >> dist/deploy-check.txt
 
-      - name: Debug (after build) - list dist output
+      - name: Debug dist
         run: |
           echo "=== ls dist ==="
-          ls -la dist || true
+          ls -la dist
           echo "=== ls dist/photos ==="
           ls -la dist/photos || true
           echo "=== find webp in dist ==="
@@ -67,10 +54,18 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
-      - name: Deploy
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
