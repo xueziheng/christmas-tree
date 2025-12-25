@@ -421,7 +421,7 @@ const ChristmasGreeting = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   });
 
   return (
-    <group ref={groupRef} position={[2, -20, 2]}>
+    <group ref={groupRef} position={[0, -20, 0]}>
       {/* 文字 */}
       <Float speed={1.2} rotationIntensity={0.05} floatIntensity={0.2}>
         <Text
